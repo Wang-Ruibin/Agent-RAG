@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import admin, auth, channels, chat, documents, system
+from app.api import admin, auth, channels, chat, documents, extensions, system
 from app.channels import channel_manager
 from app.core.config import settings
 from app.core.database import SessionLocal, init_database
@@ -131,6 +131,7 @@ app.include_router(documents.router)
 app.include_router(chat.router)
 app.include_router(system.router)
 app.include_router(channels.router)
+app.include_router(extensions.router)
 
 
 frontend = Path(settings.frontend_dist)

@@ -70,7 +70,7 @@ class DeepSeekGenerator:
         self._client: OpenAI | None = None
 
     def _get_client(self) -> OpenAI:
-        api_key = settings.deepseek_api_key.get_secret_value()
+        api_key = settings.resolved_llm_api_key.get_secret_value()
         if not api_key:
             raise RuntimeError("DEEPSEEK_API_KEY 未配置，请在本地 .env 中设置新 Key")
         if self._client is None:

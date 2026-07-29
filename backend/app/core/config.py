@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     initial_admin_password: SecretStr = SecretStr("")
 
     deepseek_api_key: SecretStr = SecretStr("")
+    llm_api_key: SecretStr = SecretStr("")
+    llm_provider: Literal["deepseek", "openai_compatible"] = "deepseek"
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-v4-flash"
     llm_temperature: float = 0.1
@@ -49,6 +51,10 @@ class Settings(BaseSettings):
     agent_tool_timeout_seconds: float = 8.0
     agent_total_timeout_seconds: float = 45.0
     agent_tool_result_max_chars: int = 12_000
+    agent_skills_dir: Path = Path("data/extensions/skills")
+    agent_plugins_dir: Path = Path("data/extensions/plugins")
+    agent_mcp_dir: Path = Path("data/extensions/mcp")
+    agent_sandbox_enabled: bool = False
     bot_credentials_encryption_key: SecretStr = SecretStr("")
     bot_attachment_max_bytes: int = 20 * 1024 * 1024
     bot_message_dedupe_ttl_seconds: int = 86400
@@ -170,6 +176,14 @@ class Settings(BaseSettings):
         self.qa_artifact_dir.mkdir(parents=True, exist_ok=True)
         self.preview_dir.mkdir(parents=True, exist_ok=True)
         self.index_dir.mkdir(parents=True, exist_ok=True)
+        self.agent_skills_dir.mkdir(parents=True, exist_ok=True)
+        self.agent_plugins_dir.mkdir(parents=True, exist_ok=True)
+        self.agent_mcp_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def resolved_llm_api_key(self) -> SecretStr:
+        """LLM_API_KEY enables any OpenAI-compatible provider; preserve the legacy key."""
+        return self.llm_api_key if self.llm_api_key.get_secret_value().strip() else self.deepseek_api_key
 
     def validate_runtime(self) -> None:
         if self.db_backend != "mysql" or self.database_url:
