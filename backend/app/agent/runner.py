@@ -46,6 +46,14 @@ class AgentRunner:
 
     @staticmethod
     def default_plan(question: str) -> AgentPlan:
+        normalized = question.lower()
+        policy_terms = ("\u653f\u7b56", "\u89c4\u5b9a", "\u529e\u6cd5", "\u5bf9\u6bd4", "\u6bd4\u8f83", "compare", "policy")
+        tool_name = "compare_policies" if any(term in normalized for term in policy_terms) else "search_campus_knowledge"
+        calls = [ToolCall(tool_name, {"query": question, "top_k": 5})]
+        current_terms = ("\u4eca\u5929", "\u5f53\u524d", "\u73b0\u5728", "\u6700\u65b0", "\u622a\u81f3", "today", "current", "latest")
+        if any(term in normalized for term in current_terms):
+            calls.insert(0, ToolCall("get_current_date", {}))
+        return AgentPlan(calls=calls, final_query=question)
         calls = [ToolCall("search_campus_knowledge", {"query": question, "top_k": 5})]
         if any(token in question for token in ("今天", "当前", "现在", "最新", "截至")):
             calls.insert(0, ToolCall("get_current_date", {}))
@@ -88,7 +96,7 @@ class AgentRunner:
             run.tool_events.append(event)
             if on_event:
                 on_event(event)
-            if call.name in {"search_campus_knowledge", "retrieve_document_evidence"}:
+            if call.name in {"search_campus_knowledge", "retrieve_document_evidence", "compare_policies"}:
                 run.evidence.extend(event.result.get("items", []))
         return run
 

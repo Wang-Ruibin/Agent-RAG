@@ -39,6 +39,13 @@ _AGENT_SIGNALS = (
 )
 
 
+_AGENT_SIGNALS = _AGENT_SIGNALS + (
+    "\u6bd4\u8f83", "\u5bf9\u6bd4", "\u5206\u522b", "\u4ea4\u66ff", "\u7136\u540e", "\u8ba1\u5212", "\u6b65\u9aa4",
+    "\u4eca\u5929", "\u5f53\u524d", "\u73b0\u5728", "\u6700\u65b0", "\u622a\u81f3", "\u6c47\u603b", "\u7ed3\u5408",
+    "\u591a\u4e2a", "\u4e24\u8005", "compare", "plan", "latest", "current",
+)
+
+
 def route_question(question: str, requested_mode: ChatMode | str = ChatMode.AUTO) -> RouteDecision:
     """Select a deterministic chat path without interpreting user content as instructions."""
     mode = ChatMode(requested_mode)

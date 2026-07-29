@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.orm import Document
+from app.services.chat_scope import is_hohai_related
+from app.services.web_search import WebSearchError, get_web_search_provider
 if TYPE_CHECKING:
     from app.rag.retrieval import RetrievalResult
 
@@ -126,6 +128,63 @@ def retrieve_document_evidence(arguments: dict[str, Any], _db: Session) -> dict[
     return {"query": query, "items": [_result_payload(item) for item in results[:5]]}
 
 
+def compare_policies(arguments: dict[str, Any], _db: Session) -> dict[str, Any]:
+    """Retrieve a small, attributable evidence set for policy comparison.
+
+    Comparison remains an LLM-generation concern; the tool only returns ranked
+    source material and never synthesizes a policy conclusion itself.
+    """
+    from app.rag.retrieval import retrieval_service
+
+    query = _query(arguments.get("query"))
+    qualifier = arguments.get("date_or_department")
+    if qualifier is not None and (not isinstance(qualifier, str) or len(qualifier) > 100):
+        raise ToolValidationError("date_or_department must be a string no longer than 100 characters")
+    top_k = _bounded_int(arguments.get("top_k", 5), field="top_k", minimum=1, maximum=5)
+    results = retrieval_service.search(query)
+    normalized = qualifier.strip().lower() if isinstance(qualifier, str) else ""
+    if normalized:
+        matched = [
+            result
+            for result in results
+            if normalized in result.title.lower() or normalized in result.content.lower()
+        ]
+        # A qualifier is a preference rather than an authority to hide all
+        # evidence; retain ranked results when no exact metadata/text match is found.
+        results = matched or results
+    return {
+        "query": query,
+        "date_or_department": normalized or None,
+        "items": [_result_payload(item) for item in results[:top_k]],
+    }
+
+
+def search_public_web(arguments: dict[str, Any], _db: Session) -> dict[str, Any]:
+    """Search the existing, scope-gated campus web provider with bounded output."""
+    query = _query(arguments.get("query"))
+    if not is_hohai_related(query):
+        raise ToolValidationError("public web search is limited to Hohai University questions")
+    try:
+        results = get_web_search_provider().search(query)
+    except WebSearchError as exc:
+        raise ToolValidationError(f"public web search unavailable: {exc.kind.value}") from exc
+    return {
+        "query": query,
+        "items": [
+            {
+                "title": item.title,
+                "url": item.url,
+                "snippet": item.snippet,
+                "content": item.content,
+                "site_name": item.site_name,
+                "domain": item.domain,
+                "published_at": item.published_at.isoformat() if item.published_at else None,
+            }
+            for item in results[:5]
+        ],
+    }
+
+
 def get_current_date(arguments: dict[str, Any], _db: Session) -> dict[str, Any]:
     if arguments:
         raise ToolValidationError("get_current_date accepts no arguments")
@@ -144,6 +203,8 @@ class ToolRegistry:
                 ToolDefinition("search_campus_knowledge", "Search the CampusQA knowledge index.", search_campus_knowledge),
                 ToolDefinition("get_document_metadata", "Read public metadata for one knowledge document.", get_document_metadata),
                 ToolDefinition("retrieve_document_evidence", "Retrieve evidence limited to selected documents.", retrieve_document_evidence),
+                ToolDefinition("compare_policies", "Retrieve source evidence for comparing campus policies.", compare_policies),
+                ToolDefinition("search_public_web", "Search public Hohai University web sources.", search_public_web),
                 ToolDefinition("get_current_date", "Return the server current date.", get_current_date),
             )
         }

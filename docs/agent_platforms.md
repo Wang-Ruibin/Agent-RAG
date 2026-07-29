@@ -26,6 +26,21 @@ available to the conversation owner or an administrator at
 - Python, shell, filesystem write, MCP process execution, and plugin code are
   not Agent tools. They remain disabled until the optional sandbox milestone.
 
+## Built-in Agent tools
+
+- `search_campus_knowledge`: bounded search over the local citation index.
+- `get_document_metadata` and `retrieve_document_evidence`: metadata and
+  evidence reads constrained to known document IDs.
+- `compare_policies`: retrieves attributable policy material for a comparison;
+  it never invents or decides the comparison itself.
+- `get_current_date`: server time in `Asia/Shanghai`.
+- `search_public_web`: invokes the existing public web provider only for
+  Hohai-related questions and returns bounded structured source fields.
+
+Policy/comparison wording selects `compare_policies` in the default Agent
+plan. Public-web search remains subject to the same Hohai scope gate and final
+`[Sx]`/`[Wx]` citation validation as direct RAG.
+
 ## WeChat ClawBot / OpenClaw
 
 The `WEIXIN_OC` adapter implements the documented post-login Tencent

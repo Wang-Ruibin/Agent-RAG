@@ -6,7 +6,9 @@ from contextlib import nullcontext
 from app.agent.contracts import AgentPlan, ToolCall
 from app.agent.router import ChatMode, route_question
 from app.agent.runner import AgentRunner
+from app.agent import tools
 from app.agent.tools import ToolValidationError
+from app.services.web_search import WebSearchResult
 
 
 class FakeRegistry:
@@ -74,3 +76,39 @@ def test_runner_rejects_plans_over_tool_budget() -> None:
         assert "exceeds" in str(exc)
     else:
         raise AssertionError("expected tool budget validation")
+
+
+def test_default_plan_selects_policy_tool_and_current_date() -> None:
+    plan = AgentRunner.default_plan("\u8bf7\u6bd4\u8f83\u6cb3\u6d77\u5927\u5b66\u6700\u65b0\u5956\u5b66\u91d1\u653f\u7b56")
+    assert [call.name for call in plan.calls] == ["get_current_date", "compare_policies"]
+
+
+def test_public_web_tool_uses_scope_gate_and_structured_results(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class Provider:
+        def search(self, _query: str) -> list[WebSearchResult]:
+            return [
+                WebSearchResult(
+                    title="Hohai news",
+                    url="https://example.edu.cn/news",
+                    snippet="published update",
+                    content="published update",
+                    site_name="example.edu.cn",
+                    domain="example.edu.cn",
+                    published_at=None,
+                    citation_index=1,
+                )
+            ]
+
+    monkeypatch.setattr(tools, "get_web_search_provider", lambda: Provider())
+    result = tools.search_public_web({"query": "Hohai University latest news"}, object())
+    assert result["items"] == [
+        {
+            "title": "Hohai news",
+            "url": "https://example.edu.cn/news",
+            "snippet": "published update",
+            "content": "published update",
+            "site_name": "example.edu.cn",
+            "domain": "example.edu.cn",
+            "published_at": None,
+        }
+    ]

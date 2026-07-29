@@ -9,7 +9,9 @@ read-only Agent. It is a separate repository from the original LLM+RAG project.
   `[S1]` citations and optional web-search fallback.
 - Chat modes: `auto`, `rag`, and `agent`. Agent mode uses only allowlisted
   read tools, at most four tool calls, five LLM rounds, eight seconds per tool,
-  and 45 seconds end-to-end.
+  and 45 seconds end-to-end. Built-in tools cover campus retrieval, policy
+  comparison evidence, current date, document metadata, and scope-gated public
+  Hohai web sources.
 - Secret-safe Agent run traces and platform identity/session mappings.
 - Bot management API and frontend route `/system/bot`.
 - WeChat ClawBot/OpenClaw post-login protocol, official DingTalk Stream mode,
