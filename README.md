@@ -36,6 +36,9 @@ cp .env.example .env
 uv sync --extra cpu
 uv run alembic upgrade head
 
+# If using the existing Java menu database, expose Bot management to admins.
+mysql -u root -p campus_qa < campus-backend/sql/migrate-agent-rag.sql
+
 # First run after adding knowledge documents.
 uv run python -m app.cli index knowledge_docs --admin-email admin@campusqa.cn
 

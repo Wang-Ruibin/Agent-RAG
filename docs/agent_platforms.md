@@ -76,3 +76,11 @@ On the first valid external message, the system creates a regular `STUDENT`
 user with a synthetic internal email, binds `PlatformIdentity`, and maps the
 private or group thread to `PlatformSession`. Message IDs are deduplicated.
 Group messages require a mention or configured prefix by default.
+
+## Existing Java menu database
+
+The Python API enforces administrator access for bot administration. If the
+Vue sidebar menu comes from the existing Java `campus_qa` database, apply
+`campus-backend/sql/migrate-agent-rag.sql` once. It adds the `/system/bot`
+entry only for the administrator role; it does not grant any platform
+credentials or bot permissions to normal users.

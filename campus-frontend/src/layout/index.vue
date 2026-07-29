@@ -94,6 +94,7 @@ const iconByPath: Record<string, string> = {
   '/knowledge/document': 'Collection',
   '/system/user': 'User',
   '/system/role': 'Key',
+  '/system/bot': 'Connection',
   '/system/log': 'Tickets',
 }
 
