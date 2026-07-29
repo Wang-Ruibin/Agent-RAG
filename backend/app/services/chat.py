@@ -5,7 +5,7 @@ import logging
 import re
 import time
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -153,6 +153,54 @@ class ChatService:
     ) -> tuple[str, list[RetrievalResult]]:
         standalone = self._retrieval_query(question, history)
         return standalone, retrieval_service.search(standalone, query_vector=query_vector)
+
+    @staticmethod
+    def agent_evidence_to_results(evidence: list[dict[str, object]]) -> list[RetrievalResult]:
+        """Convert validated structured tool output back into RAG evidence.
+
+        The conversion deliberately accepts only the fields that the read-only
+        search tool produces; arbitrary tool text never becomes model context.
+        """
+        results: list[RetrievalResult] = []
+        seen_chunks: set[int] = set()
+        for item in evidence:
+            try:
+                chunk_id = int(item["chunk_id"])
+                document_id = int(item["document_id"])
+                title = str(item["title"])
+                content = str(item["content"])
+                score = float(item["score"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not title or not content or chunk_id in seen_chunks:
+                continue
+            seen_chunks.add(chunk_id)
+            published_at = None
+            raw_date = item.get("published_at")
+            if isinstance(raw_date, str):
+                try:
+                    published_at = date.fromisoformat(raw_date)
+                except ValueError:
+                    pass
+            source_url = item.get("source_url")
+            results.append(
+                RetrievalResult(
+                    chunk_id=chunk_id,
+                    document_id=document_id,
+                    title=title[:300],
+                    content=content[:6000],
+                    source_url=source_url if isinstance(source_url, str) else None,
+                    published_at=published_at,
+                    score=score,
+                    document_kind=str(item.get("document_kind") or "KNOWLEDGE_BASE"),
+                    contributor_name=(
+                        item.get("contributor_name")
+                        if isinstance(item.get("contributor_name"), str)
+                        else None
+                    ),
+                )
+            )
+        return results
 
     def search_web(self, query: str) -> list[WebSearchResult]:
         if not settings.web_search_enabled:
@@ -373,11 +421,13 @@ class ChatService:
         guest = is_guest_user(user)
         conversation, assistant, history = self.prepare(db, user, question, conversation_id)
         try:
+            agent_retrieved: list[RetrievalResult] | None = None
             if mode is ChatMode.AGENT:
                 # Run only allowlisted read tools before the established RAG
                 # path.  The existing answer/citation pipeline remains the
                 # single authority for final grounding.
-                agent_runner.run(question, db)
+                run = agent_runner.run(question, db)
+                agent_retrieved = self.agent_evidence_to_results(run.evidence)
             standalone = self._retrieval_query(question, history)
             qa_lookup = qa_knowledge_service.lookup(standalone)
             retrieved: list[RetrievalResult] = []
@@ -403,7 +453,9 @@ class ChatService:
                 answer, sources = self.grounded_qa_answer(raw_answer, qa_lookup.sources)
                 answer_origin = AnswerOrigin.KNOWLEDGE_BASE
             else:
-                if qa_lookup.query_vector is None:
+                if agent_retrieved is not None:
+                    retrieved = agent_retrieved
+                elif qa_lookup.query_vector is None:
                     _standalone, retrieved = self.retrieve(question, history)
                 else:
                     _standalone, retrieved = self.retrieve(
@@ -505,10 +557,12 @@ class ChatService:
             },
         )
         if decision.mode is ChatMode.AGENT:
+            agent_results: list[RetrievalResult] | None = None
             with SessionLocal() as db:
                 run = agent_runner.run(question, db)
                 if agent_run_id is not None:
                     agent_run_service.finish(db, agent_run_id, run.tool_events)
+                agent_results = self.agent_evidence_to_results(run.evidence)
             for event in run.tool_events:
                 # Tool results may contain document text.  Do not stream raw
                 # results or any chain-of-thought; citations are emitted only
@@ -529,6 +583,7 @@ class ChatService:
             question,
             history,
             emit_start=False,
+            agent_results=agent_results if decision.mode is ChatMode.AGENT else None,
         )
 
     def stream(
@@ -539,6 +594,7 @@ class ChatService:
         history: list[dict[str, str]],
         *,
         emit_start: bool = True,
+        agent_results: list[RetrievalResult] | None = None,
     ) -> Iterator[str]:
         started = time.perf_counter()
         if emit_start:
@@ -586,7 +642,9 @@ class ChatService:
                     else "正在检索校园知识库..."
                 )
                 yield sse("status", {"phase": "retrieval", "message": retrieval_message})
-                if qa_lookup.query_vector is None:
+                if agent_results is not None:
+                    retrieved = agent_results
+                elif qa_lookup.query_vector is None:
                     _standalone, retrieved = self.retrieve(question, history)
                 else:
                     _standalone, retrieved = self.retrieve(

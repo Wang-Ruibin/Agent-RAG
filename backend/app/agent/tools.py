@@ -60,6 +60,8 @@ def _result_payload(result: "RetrievalResult") -> dict[str, Any]:
         "source_url": result.source_url,
         "published_at": result.published_at.isoformat() if result.published_at else None,
         "score": round(result.score, 4),
+        "document_kind": result.document_kind,
+        "contributor_name": result.contributor_name,
         "source": result.source_dict(),
     }
 
