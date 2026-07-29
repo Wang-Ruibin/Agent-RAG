@@ -56,5 +56,8 @@ class ChannelManager:
         adapter = self._adapters.get(bot_id)
         return adapter.platform if adapter else None
 
+    def adapter_for(self, bot_id: int) -> ChannelAdapter | None:
+        return self._adapters.get(bot_id)
+
 
 channel_manager = ChannelManager()

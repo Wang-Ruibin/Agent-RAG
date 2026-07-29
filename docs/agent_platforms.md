@@ -43,6 +43,33 @@ OpenClaw-WeChat HTTP protocol: `getupdates` long polling, context-token-aware
 The QR credential is not persisted by this application. The OpenClaw plugin is
 an optional MIT-licensed dependency; no plugin or AstrBot source is vendored.
 
+## QQ OneBot v11
+
+The `QQ_ONEBOT` adapter is a standard OneBot v11 HTTP integration. It does not
+ship, drive, or authenticate a QQ client. Use a compliant gateway that you
+operate and configure it as follows:
+
+1. Create a `QQ_ONEBOT` bot with encrypted credentials: `api_base_url`, the
+   optional outbound `access_token`, mandatory `webhook_secret`, and optional
+   `self_id` for group-mention detection.
+2. Start the bot. Configure the gateway's HTTP POST event callback as
+   `POST /api/channels/qq-onebot/{bot_id}/events` and set the
+   `X-Onebot-Token` header to `webhook_secret`.
+3. Private and group text messages are mapped to regular campus conversations;
+   replies use OneBot's `/send_private_msg` or `/send_group_msg` endpoint.
+
+The event token is checked with a constant-time comparison. It is not exposed
+by administration APIs or written to message records.
+
+## DingTalk
+
+The `DINGTALK` adapter uses the official `dingtalk-stream` SDK in Stream mode.
+Create and authorize a custom app in the DingTalk developer console, then save
+its `client_id` and `client_secret` as encrypted credentials and start it from
+the bot-management page. The SDK maintains the authenticated long connection;
+messages and replies pass through the same identity, session, group-rule, and
+RAG pipeline as the other platforms.
+
 ## Platform account behavior
 
 On the first valid external message, the system creates a regular `STUDENT`

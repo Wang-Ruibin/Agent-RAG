@@ -56,6 +56,12 @@ const router = createRouter({
           meta: { title: '角色管理', icon: 'Avatar' }
         },
         {
+          path: 'system/bot',
+          name: 'SystemBot',
+          component: () => import('@/views/system/bot/index.vue'),
+          meta: { title: 'Bot management', icon: 'Connection' }
+        },
+        {
           path: 'system/log',
           name: 'SystemLog',
           component: () => import('@/views/system/log/index.vue'),
