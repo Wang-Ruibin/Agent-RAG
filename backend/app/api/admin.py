@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from app.core.responses import success
 from app.channels import channel_manager
+from app.channels.factory import AdapterUnavailableError, build_adapter
 from app.models.enums import AnswerCorrectionStatus, AnswerOrigin, MessageRole, MessageStatus
 from app.models.orm import AnswerCorrection, BotInstance, Conversation, CorrectionSourceLink, Message, User
 from app.models.schemas import (
@@ -71,10 +72,16 @@ async def delete_bot(bot_id: int, db: Database, _user: AdminUser) -> dict[str, o
 @bot_router.post("/bots/{bot_id}/start")
 async def start_bot(bot_id: int, db: Database, _user: AdminUser) -> dict[str, object]:
     try:
+        stored_bot = db.get(BotInstance, bot_id)
+        if stored_bot is None:
+            raise LookupError("bot not found")
+        await channel_manager.register(bot_id, build_adapter(stored_bot))
         health = await channel_manager.start(bot_id)
         bot = bot_service.set_status(db, bot_id, health.status, health.detail)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (AdapterUnavailableError, BotConfigurationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return success({**bot_service.serialize(bot), "capabilities": list(health.capabilities)})
 
 

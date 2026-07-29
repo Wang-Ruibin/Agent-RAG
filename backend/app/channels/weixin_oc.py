@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
-from app.channels.contracts import AdapterHealth, IncomingMessage, OutgoingMessage
+from app.channels.contracts import AdapterHealth, IncomingHandler, IncomingMessage, OutgoingMessage
 from app.models.enums import BotPlatform
-
-
-IncomingHandler = Callable[[IncomingMessage], Awaitable[None]]
 
 
 class WeixinOcAdapter:
@@ -45,6 +41,7 @@ class WeixinOcAdapter:
         self.request_timeout_seconds = request_timeout_seconds
         self._cursor = ""
         self._context_tokens: dict[str, str] = {}
+        self._recipients: dict[str, str] = {}
         self._poll_task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
         self._last_error: str | None = None
@@ -100,7 +97,7 @@ class WeixinOcAdapter:
         context_token = self._context_tokens.get(message.session_id, "")
         payload = {
             "msg": {
-                "to_user_id": message.session_id,
+                "to_user_id": self._recipients.get(message.session_id, message.session_id),
                 "context_token": context_token,
                 "item_list": [{"type": 1, "text_item": {"text": message.text}}],
             }
@@ -134,7 +131,9 @@ class WeixinOcAdapter:
                 for raw in payload.get("msgs") or []:
                     incoming = self._parse_message(raw)
                     if incoming is not None:
-                        await self.on_message(incoming)
+                        reply = await self.on_message(incoming)
+                        if reply is not None:
+                            await self.send(reply)
                 delay = 1.0
             except asyncio.CancelledError:
                 raise
@@ -167,6 +166,7 @@ class WeixinOcAdapter:
         context_token = raw.get("context_token")
         if isinstance(context_token, str) and context_token:
             self._context_tokens[session_id] = context_token
+        self._recipients[session_id] = sender_id
         return IncomingMessage(
             platform=self.platform,
             bot_id=self.bot_id,

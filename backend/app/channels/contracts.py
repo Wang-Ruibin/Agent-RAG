@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Awaitable, Callable, Protocol
 
 from app.models.enums import BotPlatform
 
@@ -48,3 +48,6 @@ class ChannelAdapter(Protocol):
     async def health(self) -> AdapterHealth: ...
 
     async def login_qr(self) -> dict[str, str]: ...
+
+
+IncomingHandler = Callable[[IncomingMessage], Awaitable[OutgoingMessage | None]]
