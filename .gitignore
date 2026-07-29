@@ -1,5 +1,6 @@
 # Python environments, bytecode, packages, and tool caches
 .venv/
+.test-venv/
 venv/
 env/
 __pycache__/

@@ -22,13 +22,17 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 from .enums import (
+    AgentRunStatus,
     AnswerCorrectionStatus,
     AnswerKnowledgeStatus,
     AnswerOrigin,
+    BotPlatform,
+    BotStatus,
     DocumentKind,
     DocumentStatus,
     MessageRole,
     MessageStatus,
+    PlatformMessageDirection,
     ProcessingStage,
     Role,
 )
@@ -291,6 +295,127 @@ class CorrectionSourceLink(Base):
     document_id: Mapped[int] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"), index=True
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class BotInstance(Base):
+    """One configured external bot. Secrets are encrypted before reaching this table."""
+
+    __tablename__ = "bot_instances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    platform: Mapped[BotPlatform] = mapped_column(Enum(BotPlatform), index=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    config_encrypted: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[BotStatus] = mapped_column(Enum(BotStatus), default=BotStatus.STOPPED, index=True)
+    status_detail: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    mention_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    command_prefix: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class PlatformIdentity(Base):
+    """Maps an external account to a regular CampusQA user without external credentials."""
+
+    __tablename__ = "platform_identities"
+    __table_args__ = (UniqueConstraint("bot_instance_id", "external_user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bot_instance_id: Mapped[int] = mapped_column(
+        ForeignKey("bot_instances.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    external_user_id: Mapped[str] = mapped_column(String(255))
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class PlatformSession(Base):
+    """Maps a private or group platform thread to one CampusQA conversation."""
+
+    __tablename__ = "platform_sessions"
+    __table_args__ = (UniqueConstraint("bot_instance_id", "external_session_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bot_instance_id: Mapped[int] = mapped_column(
+        ForeignKey("bot_instances.id", ondelete="CASCADE"), index=True
+    )
+    owner_identity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("platform_identities.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    external_session_id: Mapped[str] = mapped_column(String(255))
+    is_group: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class PlatformMessage(Base):
+    """Dedupe/audit metadata only; tool evidence and credentials are never stored here."""
+
+    __tablename__ = "platform_messages"
+    __table_args__ = (UniqueConstraint("bot_instance_id", "external_message_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bot_instance_id: Mapped[int] = mapped_column(
+        ForeignKey("bot_instances.id", ondelete="CASCADE"), index=True
+    )
+    platform_session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("platform_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    platform_identity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("platform_identities.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    external_message_id: Mapped[str] = mapped_column(String(255))
+    direction: Mapped[PlatformMessageDirection] = mapped_column(Enum(PlatformMessageDirection))
+    content_preview: Mapped[str] = mapped_column(String(500), default="")
+    attachments_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    public_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    conversation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    requested_mode: Mapped[str] = mapped_column(String(16), default="auto")
+    selected_mode: Mapped[str] = mapped_column(String(16), default="rag")
+    status: Mapped[AgentRunStatus] = mapped_column(Enum(AgentRunStatus), default=AgentRunStatus.RUNNING)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AgentStep(Base):
+    __tablename__ = "agent_steps"
+    __table_args__ = (UniqueConstraint("agent_run_id", "step_index"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_run_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
+    step_index: Mapped[int] = mapped_column(Integer)
+    tool_name: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(32))
+    summary: Mapped[str] = mapped_column(String(500), default="")
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import admin, auth, chat, documents, system
+from app.channels import channel_manager
 from app.core.config import settings
 from app.core.database import SessionLocal, init_database
 from app.core.oper_log import OperLogMiddleware
@@ -72,6 +73,7 @@ async def lifespan(_app: FastAPI):
     if settings.rag_prewarm and index_count:
         retrieval_service.warmup()
     yield
+    await channel_manager.shutdown()
 
 
 app = FastAPI(

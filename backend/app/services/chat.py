@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agent.router import ChatMode, RouteDecision
+from app.agent.runner import agent_runner
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.enums import AnswerOrigin, MessageRole, MessageStatus
@@ -26,6 +28,7 @@ from app.services.chat_scope import (
 )
 from app.services.qa_knowledge import QaLookup, QaResolvedSource, qa_knowledge_service
 from app.services.web_search import WebSearchError, WebSearchResult, get_web_search_provider
+from app.services.agent_runs import agent_run_service
 
 __all__ = ("NO_EVIDENCE_REFUSALS", "OUT_OF_SCOPE_REFUSALS", "ChatService", "chat_service")
 
@@ -363,11 +366,18 @@ class ChatService:
         user: User,
         question: str,
         conversation_id: int | None,
+        *,
+        mode: ChatMode = ChatMode.RAG,
     ) -> dict[str, object]:
         started = time.perf_counter()
         guest = is_guest_user(user)
         conversation, assistant, history = self.prepare(db, user, question, conversation_id)
         try:
+            if mode is ChatMode.AGENT:
+                # Run only allowlisted read tools before the established RAG
+                # path.  The existing answer/citation pipeline remains the
+                # single authority for final grounding.
+                agent_runner.run(question, db)
             standalone = self._retrieval_query(question, history)
             qa_lookup = qa_knowledge_service.lookup(standalone)
             retrieved: list[RetrievalResult] = []
@@ -474,15 +484,65 @@ class ChatService:
         answer, sources, _cited = self.grounded_web_answer(raw_answer, web_context)
         return answer, sources
 
+    def stream_with_mode(
+        self,
+        conversation_id: int,
+        assistant_id: int,
+        question: str,
+        history: list[dict[str, str]],
+        decision: RouteDecision,
+        *,
+        agent_run_id: int | None = None,
+        agent_run_public_id: str | None = None,
+    ) -> Iterator[str]:
+        yield sse("start", {"conversation_id": conversation_id, "message_id": assistant_id})
+        yield sse(
+            "route",
+            {
+                "mode": decision.mode.value,
+                "reason": decision.reason,
+                "run_id": agent_run_public_id,
+            },
+        )
+        if decision.mode is ChatMode.AGENT:
+            with SessionLocal() as db:
+                run = agent_runner.run(question, db)
+                if agent_run_id is not None:
+                    agent_run_service.finish(db, agent_run_id, run.tool_events)
+            for event in run.tool_events:
+                # Tool results may contain document text.  Do not stream raw
+                # results or any chain-of-thought; citations are emitted only
+                # by the grounded answer path below.
+                yield sse(
+                    "agent_step",
+                    {
+                        "index": event.index,
+                        "tool": event.tool,
+                        "status": event.status,
+                        "summary": event.summary,
+                        "duration_ms": event.duration_ms,
+                    },
+                )
+        yield from self.stream(
+            conversation_id,
+            assistant_id,
+            question,
+            history,
+            emit_start=False,
+        )
+
     def stream(
         self,
         conversation_id: int,
         assistant_id: int,
         question: str,
         history: list[dict[str, str]],
+        *,
+        emit_start: bool = True,
     ) -> Iterator[str]:
         started = time.perf_counter()
-        yield sse("start", {"conversation_id": conversation_id, "message_id": assistant_id})
+        if emit_start:
+            yield sse("start", {"conversation_id": conversation_id, "message_id": assistant_id})
         full_answer = ""
         sources: list[dict[str, object]] = []
         local_results: list[RetrievalResult] = []

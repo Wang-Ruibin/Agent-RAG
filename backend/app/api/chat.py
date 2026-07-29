@@ -6,8 +6,9 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
+from app.agent.router import ChatMode, route_question
 from app.core.responses import success
-from app.models.orm import AnswerCorrection, AnswerKnowledgeTask, Conversation, Message
+from app.models.orm import AnswerCorrection, AnswerKnowledgeTask, Conversation, Message, is_guest_user
 from app.models.schemas import (
     AnswerCorrectionOut,
     AnswerCorrectionSubmitRequest,
@@ -18,6 +19,7 @@ from app.models.schemas import (
 from app.services.answer_corrections import answer_correction_service
 from app.services.answer_knowledge import answer_knowledge_service
 from app.services.chat import chat_service
+from app.services.agent_runs import agent_run_service
 
 from .dependencies import CurrentUser, Database
 
@@ -79,7 +81,16 @@ def message_dict(
 @router.post("/chat")
 def chat(body: ChatRequest, db: Database, user: CurrentUser) -> dict[str, object]:
     try:
-        return success(chat_service.complete(db, user, body.question.strip(), body.conversation_id))
+        decision = route_question(body.question, ChatMode(body.mode))
+        result = chat_service.complete(
+            db,
+            user,
+            body.question.strip(),
+            body.conversation_id,
+            mode=decision.mode,
+        )
+        result["route"] = {"mode": decision.mode.value, "reason": decision.reason}
+        return success(result)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -92,12 +103,28 @@ def chat_stream(body: ChatRequest, db: Database, user: CurrentUser) -> Streaming
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    decision = route_question(body.question, ChatMode(body.mode))
+    run_id: int | None = None
+    run_public_id: str | None = None
+    if decision.mode is ChatMode.AGENT and not is_guest_user(user):
+        run = agent_run_service.start(
+            db,
+            user,
+            conversation_id=conversation.id,
+            requested_mode=body.mode,
+            selected_mode=decision.mode,
+        )
+        run_id = run.id
+        run_public_id = run.public_id
     return StreamingResponse(
-        chat_service.stream(
+        chat_service.stream_with_mode(
             conversation.id,
             assistant.id,
             body.question.strip(),
             history,
+            decision,
+            agent_run_id=run_id,
+            agent_run_public_id=run_public_id,
         ),
         media_type="text/event-stream",
         headers={
@@ -106,6 +133,15 @@ def chat_stream(body: ChatRequest, db: Database, user: CurrentUser) -> Streaming
             "Connection": "keep-alive",
         },
     )
+
+
+@router.get("/agent/runs/{run_public_id}")
+def get_agent_run(run_public_id: str, db: Database, user: CurrentUser) -> dict[str, object]:
+    try:
+        run = agent_run_service.get_for_owner(db, user, run_public_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success(agent_run_service.serialize(db, run))
 
 
 @router.post(

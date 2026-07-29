@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 1024
     llm_timeout_seconds: float = 60.0
 
+    agent_enabled: bool = True
+    agent_max_tool_calls: int = 4
+    agent_max_llm_rounds: int = 5
+    agent_tool_timeout_seconds: float = 8.0
+    agent_total_timeout_seconds: float = 45.0
+    agent_tool_result_max_chars: int = 12_000
+    bot_credentials_encryption_key: SecretStr = SecretStr("")
+    bot_attachment_max_bytes: int = 20 * 1024 * 1024
+    bot_message_dedupe_ttl_seconds: int = 86400
+
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
     embedding_dimension: int = 512
     embedding_batch_size: int = 32

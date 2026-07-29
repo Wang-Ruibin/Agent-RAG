@@ -6,20 +6,114 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from app.core.responses import success
+from app.channels import channel_manager
 from app.models.enums import AnswerCorrectionStatus, AnswerOrigin, MessageRole, MessageStatus
-from app.models.orm import AnswerCorrection, Conversation, CorrectionSourceLink, Message, User
+from app.models.orm import AnswerCorrection, BotInstance, Conversation, CorrectionSourceLink, Message, User
 from app.models.schemas import (
     AnswerCorrectionApproveRequest,
     AnswerCorrectionRejectRequest,
     UserOut,
     UserUpdateRequest,
+    BotCreateRequest,
+    BotUpdateRequest,
 )
 from app.services.answer_corrections import answer_correction_service
+from app.services.bots import BotConfigurationError, bot_service
 
 from .chat import correction_dict
-from .dependencies import CurrentUser, Database
+from .dependencies import AdminUser, CurrentUser, Database
+
+bot_router = APIRouter(prefix="/api/admin", tags=["管理"])
+
+@bot_router.get("/bots")
+def list_bots(db: Database, _user: AdminUser) -> dict[str, object]:
+    return success([bot_service.serialize(bot) for bot in bot_service.list(db)])
+
+
+@bot_router.post("/bots", status_code=status.HTTP_201_CREATED)
+def create_bot(body: BotCreateRequest, db: Database, user: AdminUser) -> dict[str, object]:
+    try:
+        bot = bot_service.create(
+            db,
+            user,
+            platform=body.platform,
+            name=body.name,
+            credentials=body.credentials,
+            mention_required=body.mention_required,
+            command_prefix=body.command_prefix,
+        )
+    except BotConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success(bot_service.serialize(bot), "bot created", 201)
+
+
+@bot_router.patch("/bots/{bot_id}")
+def update_bot(bot_id: int, body: BotUpdateRequest, db: Database, _user: AdminUser) -> dict[str, object]:
+    try:
+        bot = bot_service.update(db, bot_id, **body.model_dump(exclude_unset=True))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BotConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success(bot_service.serialize(bot), "bot updated")
+
+
+@bot_router.delete("/bots/{bot_id}")
+async def delete_bot(bot_id: int, db: Database, _user: AdminUser) -> dict[str, object]:
+    try:
+        await channel_manager.stop(bot_id)
+        bot_service.delete(db, bot_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success(None, "bot deleted")
+
+
+@bot_router.post("/bots/{bot_id}/start")
+async def start_bot(bot_id: int, db: Database, _user: AdminUser) -> dict[str, object]:
+    try:
+        health = await channel_manager.start(bot_id)
+        bot = bot_service.set_status(db, bot_id, health.status, health.detail)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success({**bot_service.serialize(bot), "capabilities": list(health.capabilities)})
+
+
+@bot_router.post("/bots/{bot_id}/stop")
+async def stop_bot(bot_id: int, db: Database, _user: AdminUser) -> dict[str, object]:
+    try:
+        health = await channel_manager.stop(bot_id)
+        bot = bot_service.set_status(db, bot_id, health.status, health.detail)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success(bot_service.serialize(bot))
+
+
+@bot_router.post("/bots/{bot_id}/login/qr")
+async def bot_login_qr(bot_id: int, db: Database, _user: AdminUser) -> dict[str, object]:
+    if db.get(BotInstance, bot_id) is None:
+        raise HTTPException(status_code=404, detail="bot not found")
+    # A QR payload is transient by design and is never persisted in SQL.
+    return success(await channel_manager.login_qr(bot_id))
+
+
+@bot_router.get("/bots/{bot_id}/health")
+async def bot_health(bot_id: int, db: Database, _user: AdminUser) -> dict[str, object]:
+    if db.get(BotInstance, bot_id) is None:
+        raise HTTPException(status_code=404, detail="bot not found")
+    health = await channel_manager.health(bot_id)
+    return success(
+        {
+            "status": health.status,
+            "detail": health.detail,
+            "updated_at": health.updated_at.isoformat() if health.updated_at else None,
+            "capabilities": list(health.capabilities),
+        }
+    )
 
 router = APIRouter(prefix="/api/admin", tags=["管理员"])
+
+
+router.include_router(bot_router)
 
 
 @router.get("/users")

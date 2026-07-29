@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -14,6 +14,7 @@ from .enums import (
     MessageStatus,
     ProcessingStage,
     Role,
+    BotPlatform,
 )
 
 
@@ -143,6 +144,7 @@ class AnswerCorrectionOut(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(min_length=2, max_length=1000)
     conversation_id: int | None = None
+    mode: Literal["auto", "rag", "agent"] = "auto"
 
 
 class ConversationRenameRequest(BaseModel):
@@ -201,3 +203,22 @@ class ConversationOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: list[MessageOut] | None = None
+
+
+class BotCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    platform: BotPlatform
+    name: str = Field(min_length=2, max_length=120)
+    credentials: dict[str, str] = Field(default_factory=dict)
+    mention_required: bool = True
+    command_prefix: str | None = Field(default=None, max_length=32)
+
+
+class BotUpdateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    credentials: dict[str, str] | None = None
+    mention_required: bool | None = None
+    command_prefix: str | None = Field(default=None, max_length=32)

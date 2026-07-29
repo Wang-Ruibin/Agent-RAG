@@ -62,3 +62,29 @@ class AnswerCorrectionStatus(StrEnum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     FAILED = "FAILED"
+
+
+class BotPlatform(StrEnum):
+    WEIXIN_OC = "WEIXIN_OC"
+    DINGTALK = "DINGTALK"
+    QQ_ONEBOT = "QQ_ONEBOT"
+
+
+class BotStatus(StrEnum):
+    STOPPED = "STOPPED"
+    STARTING = "STARTING"
+    RUNNING = "RUNNING"
+    QR_REQUIRED = "QR_REQUIRED"
+    ERROR = "ERROR"
+
+
+class PlatformMessageDirection(StrEnum):
+    INBOUND = "INBOUND"
+    OUTBOUND = "OUTBOUND"
+
+
+class AgentRunStatus(StrEnum):
+    RUNNING = "RUNNING"
+    COMPLETE = "COMPLETE"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
