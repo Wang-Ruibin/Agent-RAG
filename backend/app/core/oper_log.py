@@ -106,6 +106,12 @@ class OperLogMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        # sys_oper_log belongs to the Java shared MySQL schema. A standalone
+        # SQLite RAG deployment has no such table and must not emit a warning
+        # thread for every write request.
+        if settings.db_backend != "mysql":
+            await self.app(scope, receive, send)
+            return
         rule = _match_rule(scope["method"], scope["path"])
         if rule is None:
             await self.app(scope, receive, send)

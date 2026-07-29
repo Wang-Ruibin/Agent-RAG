@@ -95,7 +95,7 @@ CurrentUser = Annotated[User, Depends(current_user)]
 
 def admin_user(user: CurrentUser, request: Request) -> User:
     # Python 自身角色为 ADMIN，或 Java 角色中包含 admin（角色管理分配的）
-    if user.role == Role.ADMIN or _has_java_admin(request):
+    if user.role == Role.ADMIN or _has_java_perm(request):
         return user
     raise HTTPException(status_code=403, detail="需要管理员权限")
 

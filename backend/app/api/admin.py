@@ -22,7 +22,7 @@ from app.services.answer_corrections import answer_correction_service
 from app.services.bots import BotConfigurationError, bot_service
 
 from .chat import correction_dict
-from .dependencies import AdminUser, CurrentUser, Database
+from .dependencies import AdminUser, Database
 
 bot_router = APIRouter(prefix="/api/admin", tags=["管理"])
 
@@ -126,7 +126,7 @@ router.include_router(bot_router)
 @router.get("/users")
 def list_users(
     db: Database,
-    _user: CurrentUser,
+    _user: AdminUser,
 ) -> dict[str, object]:
     users = db.scalars(select(User).order_by(User.created_at.desc())).all()
     return success([UserOut.model_validate(user).model_dump(mode="json") for user in users])
@@ -137,7 +137,7 @@ def update_user(
     user_id: int,
     body: UserUpdateRequest,
     db: Database,
-    editor: CurrentUser,
+    editor: AdminUser,
 ) -> dict[str, object]:
     user = db.get(User, user_id)
     if user is None:
@@ -158,7 +158,7 @@ def update_user(
 @router.get("/qa-conversations")
 def list_qa_conversations(
     db: Database,
-    _user: CurrentUser,
+    _user: AdminUser,
     keyword: str | None = Query(None, max_length=200, description="搜索关键词（问题/答案/标题）"),
     user_id: int | None = Query(None, description="按用户ID筛选"),
     user_name: str | None = Query(None, max_length=200, description="按用户名模糊搜索"),
@@ -305,7 +305,7 @@ def list_qa_conversations(
 def delete_qa_conversation(
     conversation_id: int,
     db: Database,
-    _user: CurrentUser,
+    _user: AdminUser,
 ) -> dict[str, object]:
     """管理员删除任意问答会话（含级联删除消息）。"""
     conversation = db.get(Conversation, conversation_id)
@@ -341,7 +341,7 @@ def admin_correction_dict(db: Database, correction: AnswerCorrection) -> dict[st
 @router.get("/answer-corrections")
 def list_answer_corrections(
     db: Database,
-    _user: CurrentUser,
+    _user: AdminUser,
     page: int = 1,
     size: int = 20,
     status_filter: AnswerCorrectionStatus | None = None,
@@ -375,7 +375,7 @@ def approve_answer_correction(
     correction_id: int,
     body: AnswerCorrectionApproveRequest,
     db: Database,
-    reviewer: CurrentUser,
+    reviewer: AdminUser,
 ) -> dict[str, object]:
     try:
         correction = answer_correction_service.approve(
@@ -398,7 +398,7 @@ def reject_answer_correction(
     correction_id: int,
     body: AnswerCorrectionRejectRequest,
     db: Database,
-    reviewer: CurrentUser,
+    reviewer: AdminUser,
 ) -> dict[str, object]:
     try:
         correction = answer_correction_service.reject(db, reviewer, correction_id, body.reason)
