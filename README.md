@@ -98,3 +98,13 @@ This project is MIT-licensed. It does not contain AstrBot source code. AstrBot
 was reviewed only as an architectural reference and is AGPL-3.0 licensed.
 The Tencent OpenClaw WeChat plugin is an optional MIT-licensed dependency; it
 is not vendored. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+---
+
+<div align="center">
+
+If Agent-RAG helps you build your own answering agents, a ⭐ Star would help more builders find it. ✨
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Wang-Ruibin/Agent-RAG&type=Date)](https://star-history.com/#Wang-Ruibin/Agent-RAG&Date)
+
+</div>
